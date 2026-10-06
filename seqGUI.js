@@ -1,0 +1,701 @@
+
+const seqGUI = p => {
+  var obj = {}; // sequence object
+  var playButton, playTimer, loopButton, augButton, shift8nButton, upOctave, downOctave; // buttons
+  var part; //Tone.js Part reference
+  var instrument = new Tone.PolySynth(Tone.Synth).toDestination(); // synth to use for this sequence
+  var container = document.getElementById("sequences");
+  //var part; // reference to the playing part
+  var proll; // piano roll rendering of sequence
+  var volSlider; // volume slider for individual sequences
+  var looping = false; // loop the sequence
+  var augmented = false; // double the duration and note lengths
+  var shifted = false; // shift onset later by 1 eighth note
+  var onNext = "m"; // play on next measure by default
+  var playing = false;
+  var timerGUI;
+  var velocity = 1;
+  var name, playerDiv;
+  var enabled = true; // only play if within view
+  var LButton, AButton, SButton, OctupButton, OctdnButton, PButton;
+  let cnv = null; // P5 canvas
+
+  p.setObj = function(_obj){
+    obj = _obj; // receive object from sequences.js script
+    //obj['vel'] = 1;  
+    part = new Tone.Part(((time, note) => {
+      // the notes given as the second element in the array
+      // will be passed in as the second argument 
+      instrument.triggerAttackRelease(Tone.Frequency(note.pitch).transpose(obj.octave * 12), note.dur, time, 0.2);
+    }), obj.sequence);
+    part.loopEnd = obj.loop; // changed from In C player (.duration)
+
+    timerGUI = new Tone.Part(((time, setTime) =>{
+      let d = setTime.dur
+      if(augmented){
+        d *= 2;
+      }
+      //playTimer.start(d);
+      //proll.start(d);
+      //console.log("playTimer dur: " + setTime.dur);
+    }), [{"time" : 0, "dur" : part.loopEnd}]);
+    
+    timerGUI.loopEnd = part.loopEnd;
+
+    if(obj.hasOwnProperty("name")){
+      name = obj.name;
+      console.log ("object keys: " + Object.keys(obj));
+      console.log("name: " + name);
+
+    }
+    cnv.style("visibility: visible;");
+  }
+
+  p.getObj = function(){
+    return obj;
+  }
+
+  p.enable = function(){
+    enabled = true;
+  }
+
+  p.disable = function(){
+    enabled = false; 
+  }
+
+  p.setSynth = function(_s){
+    instrument = _s;
+  }
+  
+  p.setup = function(){
+    cnv = p.createCanvas(400, 90);
+    cnv.style("visibility: visible;");
+    playButton = new PlayButton(p, p.width/11, p.height/1.7);
+    playTimer = new PlayTimer(p, p.width/11, p.height/2);
+    proll = new PianoRoll(p, p.width/6, p.height/5, p.width/2.2, 48);
+    // upOctave = new OctaveButton(p, p.width * 11/12, p.height/4, "up");
+    // downOctave = new OctaveButton(p, p.width * 11/12, p.height* 3/4, "down");
+    // loopButton = new LoopButton(p, p.width * 8.4/12, p.height/4);
+    // augButton = new LoopButton(p, p.width * 9.7/12, p.height/4);
+    // shift8nButton = new LoopButton(p, p.width * 8.4/12, p.height * 3/4);
+    volSlider = p.createSlider(0, 1, 1, 0.01);
+    volSlider.position(90, 76);
+    volSlider.size(p.width/3); 
+//    volSlider.style("padding: 0;")
+    volSlider.input(()=>{
+      velocity = volSlider.value();
+    });
+    p.controlButtons(); 
+  }
+
+  p.reset = function(){
+    part.loop = false;
+    timerGUI.loop = false;
+    shifted = false;
+    looping = false;
+    augmented = false;
+    obj.octave = 0;
+    LButton.style("background-color: #cfcfcf;");
+    AButton.style("background-color: #cfcfcf;");
+    SButton.style("background-color: #cfcfcf;");
+    OctupButton.style("background-color: #cfcfcf;");
+    OctdnButton.style("background-color: #cfcfcf;");
+  }
+
+  p.controlButtons = function(){
+    //invisible play button over playButton
+    let PBstyle = "width: 45px; height: 45px; border-radius: 40px;";
+    PBstyle += "background-color: Transparent; border-style: none;"
+    PButton = p.createButton("");
+    PButton.position(7, 20);
+    PButton.style(PBstyle);
+    PButton.mousePressed(() => {
+      if(enabled){
+        console.log("play button");
+        if(part.state == "started"){
+          part.dispose();
+          timerGUI.dispose();
+        }
+        p.play();
+      }
+    });
+    let style = "width: 35px; height:35px; "
+    style += "border: 4px solid #606060;"
+    style += "border-radius: 10px;"
+    style += "padding: 2px;";
+    style += "background-color: #cfcfcf;"
+    style += "font-size: 10pt; text-transform: none;"
+    LButton = p.createButton("L");
+    LButton.position(260, 5);
+    //LButton.className = "ctlButton"
+    LButton.style(style);
+    LButton.mousePressed(() => {
+      if(enabled){
+       if(looping){
+          looping = false;
+          LButton.style("background-color: #cfcfcf;");
+          console.log("Looping: " + looping);
+          part.loop = false;
+          timerGUI.loop = false;
+        } else {
+          looping = true;
+          timerGUI.loop = true;
+          LButton.style("background-color: #febc17;"); 
+          console.log("Looping: " + looping);
+          part.loop = true;
+        } 
+      }
+    });
+    // Rhythmic Augmentation
+    AButton = p.createButton(".5x");
+    AButton.position(300, 5);
+    AButton.style(style);
+    AButton.mousePressed(() =>{
+      if(enabled){
+          if(augmented){
+          augmented = false;
+          AButton.style("background-color: #cfcfcf;");
+          console.log("augmented: " + augmented);
+        } else {
+          augmented = true;
+          AButton.style("background-color: #febc17;");
+          LButton.style("background-color: #cfcfcf;");
+          looping = false;
+          part.dispose(); // restart the part
+          timerGUI.dispose();
+//          LButton.mousePressed();
+          console.log("augmented: " + augmented);
+        }
+      }
+    })
+    //SButton, OctupButton, OctdnButton
+
+    // +8n shift button re-purposed to "onNext" ('m' or 'b')
+    // controls whether sequence plays on next measure or next beat
+    SButton = p.createButton("M"); // default
+    SButton.position(340, 5);
+    SButton.style(style);
+    SButton.mousePressed(()=>{
+      shifted = false; // don't need this any more
+      if(enabled){
+        if(onNext == "m"){ // switch to "b"
+          // shifted = false;
+          SButton.style("background-color: #febc17;");
+          SButton.html("B")
+          onNext = "b"
+          // console.log("onNext: " + onNext);
+        } else {
+          // shifted = true;
+          SButton.style("background-color: #cfcfcf;");
+          // console.log("shifted: " + shifted);
+          SButton.html("M");
+          onNext = "m";
+        }
+      }
+
+    });
+    OctdnButton = p.createButton("Dn");
+    OctdnButton.position(260, 45);
+    OctdnButton.style(style); 
+    OctdnButton.mousePressed(()=>{
+      if(enabled){
+        p.downOctave();
+        p.octButtonColor();
+      }    
+    });
+    OctupButton = p.createButton("Up"); 
+    OctupButton.position(340, 45);
+    OctupButton.style(style); 
+    OctupButton.mousePressed(()=>{
+      if(enabled){
+        p.upOctave();
+        p.octButtonColor();
+      }
+    });
+    }
+  
+  p.octButtonColor = function(){
+    if(obj.hasOwnProperty("octave")){
+      console.log("octave up: " + obj.octave);
+      switch(obj.octave){
+        case -1:
+          OctdnButton.style("background-color: yellow;"); //yellow
+          OctupButton.style("background-color: #cfcfcf;");
+          break;
+        case -2:
+          OctdnButton.style("background-color: orange;"); //orange
+          OctupButton.style("background-color: #cfcfcf;");
+          break;
+        case -3:
+          OctdnButton.style("background-color: red;"); //red
+          OctupButton.style("background-color: #cfcfcf;");
+          break;
+        case 1:
+          OctupButton.style("background-color: green;"); //green
+          OctdnButton.style("background-color: #cfcfcf;");
+          break;
+        case 2:
+          OctupButton.style("background-color: blue"); //blue
+          OctdnButton.style("background-color: #cfcfcf;");
+          break;
+        case 3:
+          OctupButton.style("background-color: violet"); // violet
+          OctdnButton.style("background-color: #cfcfcf;");
+          break;
+        default:
+          OctupButton.style("background-color: #cfcfcf;");
+          OctdnButton.style("background-color: #cfcfcf;");
+      }
+    }
+  }
+  
+  p.draw = function(){
+    p.background(200); 
+    //p.stroke(0)
+    //p.rect(10, 5, 380, 40);
+    if(obj.hasOwnProperty("name") && obj.hasOwnProperty("loop")){
+      //console.log("draw")
+      p.textAlign(p.LEFT, p.TOP);
+      p.textSize(12);
+      p.fill(255);
+      p.text(obj.name, 5, 4);
+      //p.text(obj.duration, 20, 5);
+      proll.display(obj.loop, obj.sequence, velocity);
+    }
+    //playTimer.display(); // progress display
+    playTimer.isFinished(); // double check the timer
+    proll.isFinished();
+    playButton.display(); // play button
+    //loopButton.display("L", looping); // loop button
+    //augButton.display("A", augmented); // augmentation button
+    // shift8nButton.display("+8n", shifted); // 8n shift button
+    p.textAlign(p.CENTER, p.CENTER);
+    p.textSize(8);
+    p.text("octave:", 318, p.height * 2.2/4);
+    p.textSize(20);
+    let octave = obj.octave;
+    if(octave > 0){
+      octave = "+" + octave;
+    }
+    p.text(octave, 318, p.height* 3/4);
+    // upOctave.display(obj.octave);
+    // downOctave.display(obj.octave);
+    p.textAlign(p.LEFT, p.CENTER);
+    p.textSize(12);
+    p.text("vel", 65, 77); 
+    //velocity = volSlider.value();
+//    p.text(part.state, 30, p.height/2)
+  //   p.text(volSlider.value(), 20, 7); // percentage
+    // white border line on top and bottom:
+    //p.stroke('white');
+    p.strokeWeight(4);
+    p.stroke('wihite');
+    p.line(0, p.height, p.width, p.height);
+    p.strokeWeight(1);
+    p.noStroke();
+  }
+
+  p.play = function(){
+    playing = true;
+    if(Tone.Transport.state == "stopped"){
+      Tone.Transport.start();
+//      let pB = document.getElementById("powerButton");
+//      pB.click();
+    }
+
+    let t;
+    if(onNext == "m"){
+      t = p.nextMeasure();
+    } else {
+      t = p.nextBeat(shifted);
+    }
+
+
+    part = new Tone.Part(((time, note) => {
+        // the notes given as the second element in the array
+        // will be passed in as the second argument 
+      let d = note.dur;
+      if(augmented){
+        d = Tone.Time(note.dur).toSeconds() * 2;
+      }
+      instrument.triggerAttackRelease(Tone.Frequency(note.pitch).transpose(obj.octave * 12), d, time, velocity);
+  
+      }), obj.sequence).start(t);
+    console.log("start sequence");
+    part.loopEnd = obj.loop;
+    timerGUI = new Tone.Part(((time, setTime) =>{
+      let d = setTime.dur
+      if(augmented){
+        d *= 2;
+      }
+      //Tone.draw() ??
+      Tone.Draw.schedule(function(){
+        //this callback is invoked from a requestAnimationFrame
+        //and will be invoked close to AudioContext time
+        playTimer.start(d);
+        proll.start(d);
+      }, time);
+      //console.log("playTimer dur: " + setTime.dur);
+    }), [{"time" : 0, "dur" : part.loopEnd}]).start(t);
+    
+    timerGUI.loopEnd = part.loopEnd;
+
+    if(augmented){
+      part.playbackRate = 0.5;
+      timerGUI.playbackRate = 0.5;
+    } else {
+      part.playbackRate = 1;
+      timerGUI.playbackRate = 1;
+    }
+
+    if(looping){
+      part.loop = true;
+      timerGUI.loop = true;
+    }
+
+  }
+  p.noLoop = function(){
+    looping = false;
+    part.loop = false;
+    timerGUI.loop = false;
+  }
+
+  p.upOctave = function(){
+    if(obj.hasOwnProperty("octave")){
+      if(obj.octave < 3){
+        obj.octave ++;
+      }
+    }
+  }
+
+  p.downOctave = function(){
+    if(obj.hasOwnProperty("octave")){
+      if(obj.octave > -3)
+        obj.octave --;
+    }
+  }
+
+  p.nextMeasure = function(){
+    let t = Tone.Transport.position;
+    let times = t.split(':');
+    times[2] = 0; // set to downbeat;
+    times[1] = 0; // set to first beat
+    times[0] = Number(times[0]) + 1; // move up to the next measure;
+    t = times[0] + ":" + times[1] + ":" + times[2];    
+    return t
+  }
+  
+  p.nextBeat = function (shift){
+    let t = Tone.Transport.position;
+  
+    let times = t.split(':');
+    times[2] = 0; // set to downbeat;
+    times[1] = Number(times[1]) + 1; // move up to the next downbeat;
+    if (times[1] > 3) {
+      times[1] = 0;
+      times[0] = Number(times[0]) + 1;
+    }
+    if(shift){
+      times[2] = 2; // shift one eighth note
+    }
+    t = times[0] + ":" + times[1] + ":" + times[2];
+    return t; 
+  }
+
+}
+
+class PlayButton {
+  constructor(_p, _x, _y){
+    this.p = _p; // P5 object reference
+    this.x = _x;
+    this.y = _y;
+    this.w = 50;
+    this.col = this.p.color("#4caf50");
+    this.playing = false;
+  }
+
+  display(){
+    this.p.push();
+    this.p.translate(this.x, this.y);
+    this.p.scale(0.8);
+    this.p.fill("#fde4a9");
+    this.p.stroke("#5d0024");
+    this.p.strokeWeight(4);
+    if(this.playing){
+      this.p.rectMode(this.p.CENTER);
+      this.p.rect(-this.w/4, 0, this.w/4, 40);     
+      this.p.rect(this.w/4, 0, this.w/4, 40);    
+      this.col = this.p.color("#4caff0");
+    } else {
+
+      this.p.ellipse(0, 0, this.w);
+      //this.p.triangle(this.w/2, 0, -this.w/2, -this.w/2, -this.w/2, this.w/2);
+      this.p.stroke(0, 150, 0);
+      this.p.strokeJoin(this.p.ROUND);
+      this.p.fill(this.col);
+      this.p.beginShape();
+      this.p.vertex((this.w/2 * 0.7), 0);
+      let x = this.p.cos(this.p.PI - 1) * (this.w/2 * 0.75);
+      let y = this.p.sin(this.p.PI - 1) * (this.w/2 * 0.75);
+      this.p.vertex(x, y);
+      x = this.p.cos(this.p.PI + 1) * this.w/2 * 0.75;
+      y = this.p.sin(this.p.PI + 1) * this.w/2 * 0.75;
+      this.p.vertex(x, y);
+      this.p.endShape(this.p.CLOSE);
+      this.p.textAlign(this.p.CENTER, this.p.CENTER);
+      this.p.noStroke();
+      this.p.fill(0, 150, 0);
+      this.p.text("P", -2, 1);
+      this.col = this.p.color("#4caf50");
+    }
+    this.p.pop();
+  }
+}
+
+class PlayTimer {
+  constructor(_p, _x, _y){
+    this.p = _p;
+    this.x = _x;
+    this.y = _y;
+    this.d = 48;
+    this.col = this.p.color(190);
+    this.playing = false;
+    this.time = 0;
+    this.elapsedTime = 0;
+    this.startTime = 0;
+  }
+
+  start(time){
+    this.time = time * 1000; // set the timer (convert seconds to msec)
+    this.startTime = this.p.millis(); // get current clock time
+    this.playing = true;
+  }
+
+  isFinished(){
+    this.elapsedTime = this.p.millis() - this.startTime; //time now v time started
+    if(this.elapsedTime > this.time){
+      this.playing = false; // time's up!
+      this.elapsedTime = 0; // reset to 0;
+      this.startTime = 0;
+      this.time = 0;
+    }
+    else this.playing = true;
+  }
+
+  display(){
+    this.p.push();
+    this.p.translate(this.x, this.y);
+    this.p.scale(0.8);
+    this.p.fill(this.col);
+//    this.p.text(this.elapsedTime, 0, 0)
+    let progress = this.elapsedTime / this.time * this.p.TWO_PI;
+    this.p.stroke(100);
+    this.p.ellipse(0, 0, this.d * 1.02);
+    this.p.stroke(255);
+    this.p.fill(120);
+    this.p.arc(0, 0, this.d, this.d, 0, progress, this.p.PIE);
+    this.p.pop();
+  }
+}
+
+class OctaveButton {
+  constructor(_p, _x, _y, _dir){
+    this.p = _p;
+    this.x = _x;
+    this.y = _y;
+    this.dir = _dir;
+    this.w = 35;
+    this.bgcol = this.p.color(190);
+    this.acol = this.p.color(120);
+    
+  }
+
+  display(o){
+    this.p.push();
+    this.p.translate(this.x, this.y);
+    this.p.scale(0.8);
+    this.label = "+8ve"
+    this.colors = ["red", "orange", "yellow", "green", "blue", "purple", "indigo"];
+    this.p.fill(this.bgcol);
+    this.p.rectMode(this.p.CENTER);
+    this.p.strokeWeight(5);
+    this.p.rect(0, 0, this.w, this.w, this.w/4);
+//    this.p.fill(this.acol);
+    this.p.fill(this.colors[o+3]);
+    this.p.strokeWeight(1);
+    switch(this.dir){
+      case "up" : 
+      this.p.triangle(0, -this.w/4, -this.w/4, this.w/4, this.w/4, this.w/4);
+      //this.p.rotate(0);
+        this.label = "+8v"
+        break;
+      case "down" :
+        //this.p.rotate(this.p.PI);
+        this.p.triangle(0, this.w/4, -this.w/4, -this.w/4, this.w/4, -this.w/4);
+        this.label = "-8v"
+        break;
+      default :
+        this.p.rotate(0);
+    }
+    this.p.textAlign(this.p.CENTER, this.p.CENTER);
+    this.p.textSize(12);
+    this.p.fill(0)
+    //this.p.text(this.label, 0, 0)
+    this.p.pop();
+  }
+}
+
+class LoopButton{
+  constructor(_p, _x, _y){
+    this.p = _p; //P5 instance context
+    this.x = _x;
+    this.y = _y;
+    this.w = 35;
+    this.bgcol = this.p.color(190);
+    this.acol = this.p.color(100);
+
+  }
+  display(label, flag){
+    if(flag){
+      this.bgcol = this.p.color("#febc17");
+      this.acol = this.p.color('#5d0024');
+    }
+    else{
+      this.bgcol = this.p.color(190);
+      this.acol = this.p.color(100);
+    }
+    this.p.push();
+    this.p.translate(this.x, this.y);
+    this.p.scale(0.8);
+    this.p.fill(this.bgcol);
+    this.p.rectMode(this.p.CENTER);
+    this.p.strokeWeight(5);
+    this.p.rect(0, 0, this.w, this.w, this.w/4);
+    this.p.fill(this.acol);
+    this.p.textAlign(this.p.CENTER, this.p.CENTER);
+    this.p.textSize(16);
+    this.p.text(label, 0, 0);
+    this.p.pop();
+  }
+}
+
+class PianoRoll {
+  constructor(_p, _x, _y, _w, _h){
+    this.p = _p;
+    this.x = _x;
+    this.y = _y;
+    this.w = _w;
+    this.h = _h;
+    this.col = this.p.color("#4caf50");
+    this.obj = {};
+    this.cursor = 0; // start playhead cursor at 0
+    this.playing = false;
+    this.time = 1; // don't divide by 0!
+    this.elapsedTime = 0;
+    this.startTime = 0;
+  }
+
+  display(dur, seq, vel){
+    this.p.push();
+    this.p.translate(this.x, this.y);
+    this.p.fill(210, 110); // pale grey, translucent
+    this.p.rect(0, 0, this.w, this.h, 5); //bounding rectangle
+    let d = Tone.Time(dur).toSeconds();
+    let measure = Tone.Time("1m").toSeconds(); // calculate 1m for current tempo
+    let sixteenth = Tone.Time("16n").toSeconds(); // calculate 1 16th note
+    let window = this.w;
+    let barline = this.w / 2; // width of measure marker in px
+    let num_measures = 2; // show 2 measures by default
+
+    if (d > measure){
+      // scale to window 
+      num_measures = Math.trunc(d/measure);
+      if(d % measure > 0){
+        num_measures++; // pad out to whole number of measures
+      }
+      window = d/measure * this.w / num_measures;
+      barline = this.w / num_measures;
+
+    } else {
+      // fit sequence to grid
+      window = d/measure * this.w;
+      num_measures = 1;
+      barline = this.w;
+    }
+//    this.p.fill(222, 255, 222, 110); // pale green, translucent
+//rgba(254,188,23,255)
+    this.p.fill('#ffe4a2'); // pale yellow
+    this.p.rect(0, 0, window, this.h, 5); //note window
+    for(let i = 0; i < num_measures; i++){
+      //barlines
+      this.p.textSize(8)
+      this.p.noStroke();
+      this.p.fill(100)
+      this.p.text("m." + (i +1), i * barline + 2, 2)
+      this.p.stroke(150);
+      this.p.line(i * barline, 0, i * barline, this.h);
+    }
+    //draw notes
+    let low = 56; // default low note for vertical scaling purposes
+    let high = 80; // default high note
+    if(Array.isArray(seq)){
+      for(let i = 0; i < seq.length; i++){
+        let pit = Tone.Frequency(seq[i].pitch).toMidi();
+        if(pit < low){
+          low = pit; // set new low
+        } else if (pit > high){
+          high = pit; // set new high pitch
+        }
+      }
+    }
+    let r = 160;
+    let g = 20;
+    let b = 79;
+    let tr = 50 + (125 * vel); 
+    this.p.fill(r, g, b, tr);// velocity could affect this
+//    this.p.fill("#a0144faf");// velocity could affect this
+    this.p.noStroke();
+    if(Array.isArray(seq)){
+      for(let i = 0; i < seq.length; i++){
+        //this.p.fill(0);
+        let pit = Tone.Frequency(seq[i].pitch).toMidi();
+        let t = Tone.Time(seq[i].time).toSeconds();
+//        let x = this.p.map(t, 0, d, 2, this.w -10);//horizontal scaling
+        let x = this.p.map(t, 0, d, 2, window);//horizontal scaling
+/** find lowest note and highest note in sequence first and use those values here */
+        let y = this.p.map(pit, high, low, 5, this.h - 8);
+//        let l = (Tone.Time(seq[i].dur).toSeconds()/d * this.w) * .9;
+        let l = (Tone.Time(seq[i].dur).toSeconds()/d * window) * .9; // note length
+//        this.p.rect(10 + i * 15, y, 10, 2);
+        this.p.noStroke();
+        this.p.rectMode(this.p.CORNER);
+        this.p.rect(x, y, l, this.h/12);
+        //this.p.text(pit, 10 + i * 25, 10);
+        //this.p.text(t, 10 + i * 25, 30);
+      }
+    }
+    // add playhead cursor
+    this.cursor = this.elapsedTime / this.time * window;
+    this.p.stroke(255, 0, 0);
+    this.p.line(this.cursor, 0, this.cursor, this.h)
+    this.p.pop();
+  }
+
+  start(time){
+    this.time = time * 1000; // set the timer (convert seconds to msec)
+    this.startTime = this.p.millis(); // get current clock time
+    this.playing = true;
+  }
+
+  isFinished(){
+    this.elapsedTime = this.p.millis() - this.startTime; //time now v time started
+    if(this.elapsedTime > this.time){
+      this.playing = false; // time's up!
+      this.elapsedTime = 0; // reset to 0;
+      this.startTime = 0;
+      this.time = 0;
+    }
+    else this.playing = true;
+  }
+
+}
